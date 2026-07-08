@@ -343,8 +343,17 @@ func requestOrigin(c echo.Context) string {
 	return scheme + "://" + c.Request().Host
 }
 
+func originOf(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return strings.TrimRight(rawURL, "/")
+	}
+	return parsed.Scheme + "://" + parsed.Host
+}
+
 var adminTemplate = template.Must(template.New("admin").Funcs(template.FuncMap{
-	"join": strings.Join,
+	"join":     strings.Join,
+	"originOf": originOf,
 }).Parse(`<!doctype html>
 <html lang="en">
   <head>
@@ -453,13 +462,20 @@ var adminTemplate = template.Must(template.New("admin").Funcs(template.FuncMap{
               <button type="submit">Add host</button>
             </form>
 
-            <h3 style="margin-top: 18px;">Snippet</h3>
+            <h3 style="margin-top: 18px;">Script snippet</h3>
             <pre>&lt;script
   async
   src="{{$.WidgetShellURL}}"
   data-widget-key="{{.Key}}"
   data-api-url="{{$.APIURL}}"&gt;
 &lt;/script&gt;</pre>
+
+            <h3>Iframe snippet</h3>
+            <pre>&lt;iframe
+  title="OmniChat"
+  src="{{originOf $.WidgetShellURL}}/frame/?key={{.Key}}&amp;api={{$.APIURL}}"
+  style="width: 400px; height: 640px; border: 0;"&gt;
+&lt;/iframe&gt;</pre>
 
             <h3>Bootstrap test</h3>
             <pre>{{$.APIURL}}/widget/v1/bootstrap?key={{.Key}}&amp;host={{if .Hosts}}{{index .Hosts 0}}{{else}}https://example.com{{end}}</pre>
