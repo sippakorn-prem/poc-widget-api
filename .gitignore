@@ -1,2 +1,4 @@
 .gocache/
+.tmp-widgets.json
+widgets.json
 poc-widget-api
