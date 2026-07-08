@@ -46,6 +46,16 @@ It also generates a public widget key such as:
 wk_abcd5678
 ```
 
+The admin UI lets you test dynamic widget UI config:
+
+- Widget display name
+- Brand color
+- Bot message color
+- Avatar text
+- Status text
+- Launcher label
+- Welcome message
+
 Try the seeded demo happy path:
 
 ```bash

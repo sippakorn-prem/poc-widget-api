@@ -18,12 +18,16 @@ import (
 )
 
 type Widget struct {
-	Key         string   `json:"key"`
-	CompanyName string   `json:"companyName"`
-	DisplayName string   `json:"displayName"`
-	Color       string   `json:"color"`
-	Welcome     string   `json:"welcome"`
-	Hosts       []string `json:"hosts"`
+	Key          string   `json:"key"`
+	CompanyName  string   `json:"companyName"`
+	DisplayName  string   `json:"displayName"`
+	Color        string   `json:"color"`
+	BotColor     string   `json:"botColor"`
+	AvatarText   string   `json:"avatarText"`
+	StatusText   string   `json:"statusText"`
+	LauncherText string   `json:"launcherText"`
+	Welcome      string   `json:"welcome"`
+	Hosts        []string `json:"hosts"`
 }
 
 type WidgetStore struct {
@@ -77,15 +81,36 @@ func main() {
 		}
 
 		widget := Widget{
-			Key:         generateWidgetKey(),
-			CompanyName: defaultString(companyName, displayName),
-			DisplayName: displayName,
-			Color:       defaultString(c.FormValue("color"), "#4f46e5"),
-			Welcome:     defaultString(c.FormValue("welcome"), "Served cross-origin and gated by the POC API."),
-			Hosts:       parseHostList(c.FormValue("hosts")),
+			Key:          generateWidgetKey(),
+			CompanyName:  defaultString(companyName, displayName),
+			DisplayName:  displayName,
+			Color:        defaultString(c.FormValue("color"), "#4f46e5"),
+			BotColor:     defaultString(c.FormValue("botColor"), "#f2f3f7"),
+			AvatarText:   strings.TrimSpace(c.FormValue("avatarText")),
+			StatusText:   defaultString(c.FormValue("statusText"), "Online"),
+			LauncherText: defaultString(c.FormValue("launcherText"), "Open chat"),
+			Welcome:      defaultString(c.FormValue("welcome"), "Served cross-origin and gated by the POC API."),
+			Hosts:        parseHostList(c.FormValue("hosts")),
 		}
 
 		if err := store.upsert(widget); err != nil {
+			return err
+		}
+		return c.Redirect(http.StatusFound, "/admin")
+	})
+
+	e.POST("/admin/widgets/:key/config", func(c echo.Context) error {
+		if err := store.updateConfig(c.Param("key"), func(widget Widget) Widget {
+			widget.CompanyName = defaultString(c.FormValue("companyName"), widget.CompanyName)
+			widget.DisplayName = defaultString(c.FormValue("displayName"), widget.DisplayName)
+			widget.Color = defaultString(c.FormValue("color"), widget.Color)
+			widget.BotColor = defaultString(c.FormValue("botColor"), widget.BotColor)
+			widget.AvatarText = strings.TrimSpace(c.FormValue("avatarText"))
+			widget.StatusText = defaultString(c.FormValue("statusText"), widget.StatusText)
+			widget.LauncherText = defaultString(c.FormValue("launcherText"), widget.LauncherText)
+			widget.Welcome = defaultString(c.FormValue("welcome"), widget.Welcome)
+			return widget
+		}); err != nil {
 			return err
 		}
 		return c.Redirect(http.StatusFound, "/admin")
@@ -127,9 +152,13 @@ func main() {
 		}
 
 		return c.JSON(http.StatusOK, map[string]any{
-			"displayName": widget.DisplayName,
-			"color":       widget.Color,
-			"welcome":     widget.Welcome,
+			"displayName":  widget.DisplayName,
+			"color":        widget.Color,
+			"botColor":     widget.BotColor,
+			"avatarText":   widget.AvatarText,
+			"statusText":   widget.StatusText,
+			"launcherText": widget.LauncherText,
+			"welcome":      widget.Welcome,
 		})
 	})
 
@@ -167,12 +196,15 @@ func (s *WidgetStore) seedDemoWidget(hosts []string) {
 	}
 
 	s.widgets["wk_demo"] = Widget{
-		Key:         "wk_demo",
-		CompanyName: "Demo Company",
-		DisplayName: "ZimpleOmni",
-		Color:       "#4f46e5",
-		Welcome:     "Served cross-origin and gated by the POC API.",
-		Hosts:       normalizeHosts(hosts),
+		Key:          "wk_demo",
+		CompanyName:  "Demo Company",
+		DisplayName:  "ZimpleOmni",
+		Color:        "#4f46e5",
+		BotColor:     "#f2f3f7",
+		StatusText:   "Online",
+		LauncherText: "Open chat",
+		Welcome:      "Served cross-origin and gated by the POC API.",
+		Hosts:        normalizeHosts(hosts),
 	}
 	_ = s.saveLocked()
 }
@@ -181,7 +213,7 @@ func (s *WidgetStore) get(key string) (Widget, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	widget, ok := s.widgets[key]
-	return widget, ok
+	return withWidgetDefaults(widget), ok
 }
 
 func (s *WidgetStore) list() []Widget {
@@ -190,7 +222,7 @@ func (s *WidgetStore) list() []Widget {
 
 	widgets := make([]Widget, 0, len(s.widgets))
 	for _, widget := range s.widgets {
-		widgets = append(widgets, widget)
+		widgets = append(widgets, withWidgetDefaults(widget))
 	}
 	sort.Slice(widgets, func(i, j int) bool {
 		return widgets[i].CompanyName < widgets[j].CompanyName
@@ -218,6 +250,18 @@ func (s *WidgetStore) addHost(key, host string) error {
 		sort.Strings(widget.Hosts)
 	}
 	s.widgets[key] = widget
+	return s.saveLocked()
+}
+
+func (s *WidgetStore) updateConfig(key string, update func(Widget) Widget) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	widget, ok := s.widgets[key]
+	if !ok {
+		return nil
+	}
+	s.widgets[key] = update(widget)
 	return s.saveLocked()
 }
 
@@ -273,6 +317,16 @@ func defaultString(value, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func withWidgetDefaults(widget Widget) Widget {
+	widget.DisplayName = defaultString(widget.DisplayName, "ZimpleOmni")
+	widget.Color = defaultString(widget.Color, "#4f46e5")
+	widget.BotColor = defaultString(widget.BotColor, "#f2f3f7")
+	widget.StatusText = defaultString(widget.StatusText, "Online")
+	widget.LauncherText = defaultString(widget.LauncherText, "Open chat")
+	widget.Welcome = defaultString(widget.Welcome, "Served cross-origin and gated by the POC API.")
+	return widget
 }
 
 func generateWidgetKey() string {
@@ -413,6 +467,18 @@ var adminTemplate = template.Must(template.New("admin").Funcs(template.FuncMap{
             <label>Brand color
               <input name="color" value="#4f46e5">
             </label>
+            <label>Bot message color
+              <input name="botColor" value="#f2f3f7">
+            </label>
+            <label>Avatar text
+              <input name="avatarText" placeholder="CA">
+            </label>
+            <label>Status text
+              <input name="statusText" value="Online">
+            </label>
+            <label>Launcher label
+              <input name="launcherText" value="Open chat">
+            </label>
             <label>Allowed hosts
               <textarea name="hosts" placeholder="company-a.com&#10;localhost:8080"></textarea>
             </label>
@@ -439,6 +505,39 @@ var adminTemplate = template.Must(template.New("admin").Funcs(template.FuncMap{
                 <button class="danger" type="submit">Delete</button>
               </form>
             </div>
+
+            <h3>Widget UI config</h3>
+            <form method="post" action="/admin/widgets/{{.Key}}/config">
+              <div class="grid">
+                <label>Company name
+                  <input name="companyName" value="{{.CompanyName}}" required>
+                </label>
+                <label>Widget display name
+                  <input name="displayName" value="{{.DisplayName}}" required>
+                </label>
+                <label>Brand color
+                  <input name="color" value="{{.Color}}">
+                </label>
+                <label>Bot message color
+                  <input name="botColor" value="{{.BotColor}}">
+                </label>
+                <label>Avatar text
+                  <input name="avatarText" value="{{.AvatarText}}" placeholder="CA">
+                </label>
+                <label>Status text
+                  <input name="statusText" value="{{.StatusText}}">
+                </label>
+                <label>Launcher label
+                  <input name="launcherText" value="{{.LauncherText}}">
+                </label>
+                <label>Welcome message
+                  <input name="welcome" value="{{.Welcome}}">
+                </label>
+              </div>
+              <div class="actions">
+                <button type="submit">Save UI config</button>
+              </div>
+            </form>
 
             <h3>Allowed hosts</h3>
             {{if .Hosts}}
